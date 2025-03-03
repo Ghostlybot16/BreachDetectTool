@@ -1,0 +1,13 @@
+# Ignore venv folder
+venv/
+
+# Ignore the .env file containing sensitive information 
+.env
+
+# Ignore cache files 
+__pycache__/
+
+# Ignore the migrations directory auto created files
+backEnd/migrations/versions/
+backEnd/migrations/script.py.mako
+backEnd/migrations/README
