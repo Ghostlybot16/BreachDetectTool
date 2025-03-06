@@ -11,3 +11,7 @@ __pycache__/
 backEnd/migrations/versions/
 backEnd/migrations/script.py.mako
 backEnd/migrations/README
+
+# Ignore JWT RSA private and public keys 
+backEnd/private.pem
+backEnd/public.pem
