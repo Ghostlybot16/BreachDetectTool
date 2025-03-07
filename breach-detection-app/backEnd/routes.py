@@ -1,7 +1,8 @@
 # This file contains API endpoints for the FastAPI backend
 
 import json
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from limiter import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from database import get_db
@@ -39,7 +40,8 @@ class TokenResponse(BaseModel):
 # User Registration Endpoint
 # ------------------------------
 @router.post("/register", response_model=TokenResponse)
-async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute") # Limit to 5 requests per minute per IP 
+async def register(request: Request, user: UserCreate, db: AsyncSession = Depends(get_db)):
     """
     Registers a new user in the database 
     - Hashes the password before storing 
@@ -48,7 +50,6 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     # Query the database to check if the email is already registered
     query_result = await db.execute(select(User).where(User.email == user.email))
     existing_user = query_result.scalars().first() 
-    print(f"Checking for existing user: {user.email} -> {existing_user}")
     
     if existing_user: 
         raise HTTPException(
@@ -58,7 +59,9 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     
     # Ensure only an authenticated admins can create new admins 
     if user.role == "admin":
-        current_user = verify_access_token(oauth2_scheme)
+        
+        token = await oauth2_scheme(Request) # Extract the token
+        current_user = verify_access_token(token) # Verify the token
         
         # Query the database for the current user's role
         query_result = await db.execute(select(User).where(User.email == current_user["sub"]))
@@ -70,12 +73,13 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admins can create new admins"
             )
+            
     # Hash users password for secure storage
     # user.role determines which function to use based on user or admin account
     hashed_password = hash_password(user.password, user.role)  
     
     # New user gets added to the database 
-    new_user = User(email=user.email, hashed_password=hashed_password)
+    new_user = User(email=user.email, hashed_password=hashed_password, role=user.role)
     db.add(new_user)
     await db.commit() # Save user to the database
     await db.refresh(new_user) # Refresh to get the latest state
@@ -99,7 +103,8 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
 # User Login Endpoint
 # ------------------------------
 @router.post("/login", response_model=TokenResponse)
-async def login(user: UserCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute") # Limit to 10 logins per minute per IP
+async def login(request: Request, user: UserCreate, db: AsyncSession = Depends(get_db)):
     """
     Authenticates a user
     - Checks if the user exists and verified the password 
@@ -135,7 +140,8 @@ async def login(user: UserCreate, db: AsyncSession = Depends(get_db)):
 # Protected Route (Requires JWT Token)
 # ------------------------------
 @router.get("/protected")
-async def protected_route(token: str = Depends(oauth2_scheme)):
+@limiter.limit("15/minute") # Limit to 15 requests per minute per IP
+async def protected_route(request: Request, token: str = Depends(oauth2_scheme)):
     """
     Protected route that requires a valid JWT token
     - Extracts and verifies the JWT
@@ -155,7 +161,8 @@ async def protected_route(token: str = Depends(oauth2_scheme)):
     )
 
 @router.get("/admin-only", dependencies=[Depends(check_role("admin"))])
-async def admin_dashboard():
+@limiter.limit("5/minute") # Limit to 5 requests per minute per IP
+async def admin_dashboard(request: Request):
     return {"message": "Welcome, Admin! You have full access"}
 
 @router.get("/")
