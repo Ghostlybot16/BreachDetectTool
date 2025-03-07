@@ -11,7 +11,8 @@ from auth import (
     verify_password, 
     create_access_token, 
     oauth2_scheme, 
-    verify_access_token
+    verify_access_token,
+    check_role
 )
 from pydantic import BaseModel
 from datetime import timedelta
@@ -25,6 +26,7 @@ class UserCreate(BaseModel):
     """Schema for user registratin and login requests"""
     email: str # User email (required)
     password: str # User password (required)
+    role: str = "user"
 
 class TokenResponse(BaseModel):
     """Schema for responses that return a JWT token"""
@@ -53,7 +55,24 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    hashed_password = hash_password(user.password) # Hash users password for secure storage 
+    
+    # Ensure only an authenticated admins can create new admins 
+    if user.role == "admin":
+        current_user = verify_access_token(oauth2_scheme)
+        
+        # Query the database for the current user's role
+        query_result = await db.execute(select(User).where(User.email == current_user["sub"]))
+        current_user_db = query_result.scalars().first()
+        
+        # If user does not exist in the database or the role isn't admin then return 403 Forbidden error message
+        if not current_user_db or current_user_db.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can create new admins"
+            )
+    # Hash users password for secure storage
+    # user.role determines which function to use based on user or admin account
+    hashed_password = hash_password(user.password, user.role)  
     
     # New user gets added to the database 
     new_user = User(email=user.email, hashed_password=hashed_password)
@@ -62,7 +81,7 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.refresh(new_user) # Refresh to get the latest state
     
     # Generate a JWT access token for the new user 
-    access_token = create_access_token({"sub": new_user.email})
+    access_token = create_access_token(new_user.email, new_user.role)
     
     # Return the token so the user is logged in immediately 
     return Response(
@@ -73,7 +92,6 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
         status_code=status.HTTP_201_CREATED,
         media_type="application/json"
     )
-    # return {"access_token": access_token, "token_type": "bearer"}
 
 
 
@@ -92,19 +110,20 @@ async def login(user: UserCreate, db: AsyncSession = Depends(get_db)):
     db_user = query_result.scalars().first()
     
     # If user is NOT FOUND or INCORRECT PASSWORD, return an error 
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
+    if not db_user or not verify_password(user.password, db_user.hashed_password, db_user.role):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Invalid credentials"
         )
     
     # Generate a JWT access token for the authenticated user 
-    access_token = create_access_token({"sub": db_user.email})
+    access_token = create_access_token(db_user.email, db_user.role)
     
     # Return the token to login
     return Response(
         content=json.dumps({
             "access_token": access_token,
+            "role": db_user.role,
             "token_type": "bearer"
         }),
         status_code=status.HTTP_200_OK,
@@ -134,6 +153,10 @@ async def protected_route(token: str = Depends(oauth2_scheme)):
         status_code=status.HTTP_200_OK,
         media_type="application/json"
     )
+
+@router.get("/admin-only", dependencies=[Depends(check_role("admin"))])
+async def admin_dashboard():
+    return {"message": "Welcome, Admin! You have full access"}
 
 @router.get("/")
 async def home():
