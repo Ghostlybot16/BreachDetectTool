@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from .config import app_config
+from typing import Optional
 
 # Load RSA Private and Public keys 
 with open(app_config.JWT_PRIVATE_KEY, "r") as f:
@@ -29,6 +30,7 @@ pwd_context_admin = CryptContext(schemes=["argon2"], deprecated="auto")
 
 # OAuth2 Bearer Token Setup
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False) # Makes the token optional, required for registration
 
 # Function to check is a user has the right role 
 def check_role(required_role: str):
