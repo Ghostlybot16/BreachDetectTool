@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from config import app_config
+from .config import app_config
 
 # Load RSA Private and Public keys 
 with open(app_config.JWT_PRIVATE_KEY, "r") as f:
@@ -49,6 +49,24 @@ def check_role(required_role: str):
         return payload 
     return role_dependency
 
+# Function to restrict access to only the superadmin
+def check_superadmin():
+    """
+    - Dependency to allow only the superadmin to access certain endpoints.
+    - Extracts and verifies that the role in JWT token is 'super_admin'.
+    """
+    def role_dependency(token: str = Depends(oauth2_scheme)):
+        
+        payload = verify_access_token(token) # Verify the token
+        
+        if payload.get("role") != "super_admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only superadmin can access this resource."
+            )
+        return payload 
+    return role_dependency
+
 # -----------------------------------
 # Password Hashing and Verification
 # -----------------------------------
@@ -70,7 +88,7 @@ def verify_password(plain_password: str, hashed_password: str, role: str) -> boo
     - Admin passwords are checked with Argon2
     - User passwords are checked with Bcrypt
     """
-    if role == "admin":
+    if role in ["admin", "super_admin"]:
         return pwd_context_admin.verify(plain_password, hashed_password)
     return pwd_context_user.verify(plain_password, hashed_password)
 

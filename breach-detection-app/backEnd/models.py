@@ -19,5 +19,15 @@ class BreachCheckHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE")) # if user is deleted, their breach history is auto removed
     email_checked = Column(String, nullable=False)
+    label = Column(String, nullable=True)
     breached = Column(String, nullable=True)
     check_time = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    
+class GeneratedPassword(Base):
+    __tablename__ = "generated_passwords"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    name = Column(String, nullable=False)
+    password = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

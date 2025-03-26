@@ -2,8 +2,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from slowapi.middleware import SlowAPIASGIMiddleware
 from slowapi.errors import RateLimitExceeded
-from routes import router # Import API routes
-from limiter import limiter # Import limiter from limiter.py
+from backEnd.api_routes import router # Import API routes
+from .limiter import limiter # Import limiter from limiter.py
 
 # FastAPI app instance
 app = FastAPI(title="Breach Detection API")
