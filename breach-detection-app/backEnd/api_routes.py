@@ -741,6 +741,96 @@ async def reset_admin_password(
     return {"message": "Admin password reset successfully by superadmin."}
     
 
+# ------------------------------
+# Superadmin Reset Normal User Password
+# ------------------------------
+@router.post("/superadmin/reset-user-password")
+@limiter.limit("3/minute")
+async def superadmin_reset_user_password(
+    request: Request,
+    payload: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    - Allows the Superadmin to reset the password a normal user.
+    """
+    # Authenticate requester and verify superadmin role 
+    current_user = verify_access_token(token)
+    query_result = await db.execute(select(User).where(User.email == current_user["sub"]))
+    requester = query_result.scalars().first()
+    
+    if not requester or requester.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only superadmins can reset user passwords."
+        )
+    
+    # Find the target user 
+    target_result = await db.execute(select(User).where(User.email == payload.email))
+    target_user = target_result.scalars().first()
+    
+    if not target_user or target_user.role != "user":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User either does not exists or they are not a normal user."
+        )
+    
+    # Hash new password and update in database 
+    hashed_password = hash_password(payload.new_password, "user")
+    await db.execute(
+        update(User).where(User.email == payload.email).values(hashed_password=hashed_password)
+    )
+    await db.commit()
+    
+    return {"message": "User password reset successfully by superadmin."}
+
+
+# ------------------------------
+# Admin Reset Normal User Password
+# ------------------------------
+@router.post("/admin/reset-user-password")
+@limiter.limit("3/minute")
+async def admin_reset_user_password(
+    request: Request,
+    payload: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(oauth2_scheme)    
+):
+    """
+    - Allows a normal admin (not superadmin) to reset a user's password
+    """
+    # Authenticate requester and verify admin role (but not superadmin)
+    current_user = verify_access_token(token)
+    query_result = await db.execute(select(User).where(User.email == current_user["sub"]))
+    requester = query_result.scalars().first()
+    
+    if not requester or requester.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can reset user passwords."
+        )
+    
+    # Ensure the target is a normal user 
+    target_result = await db.execute(select(User).where(User.email == payload.email))
+    target_user = target_result.scalars().first()
+    
+    if not target_user or target_user.role != "user":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User either does not exist or is not a normal user."
+        )
+    
+    # Hash and update the new password 
+    hashed_password = hash_password(payload.new_password, "user")
+    await db.execute(
+        update(User).where(User.email == payload.email).values(hashed_password=hashed_password)
+    )
+    await db.commit()
+    
+    return {"message": "User password reset successfully by admin."}
+
+
 @router.get("/")
 async def home():
     return {"message": "Welcome to the Breach Detection API"}
