@@ -14,6 +14,7 @@ from .auth import (
     verify_password, 
     create_access_token, 
     oauth2_scheme, 
+    optional_oauth2_scheme,
     verify_access_token,
     check_role,
     check_superadmin
@@ -109,7 +110,7 @@ async def register(
     request: Request, 
     user: UserCreate, 
     db: AsyncSession = Depends(get_db),
-    token: str = Depends(oauth2_scheme) # Token dependency (for admin verification)
+    token: Optional[str] = Depends(optional_oauth2_scheme) # Token dependency (for admin verification)
     ):
     """
     Registers a new user in the database 
@@ -132,6 +133,11 @@ async def register(
     # Ensure only an authenticated admins can create new admins and prevent normal users from creating admin accounts
     if user.role.lower() == "admin":
         
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Token required to create admin accounts"
+            )
         # Authenticate the user (must be an admin to create new admins)
         current_user = verify_access_token(token) # Verify the token
         
